@@ -913,4 +913,47 @@ impl ClobClient {
             .json::<Value>()
             .await?)
     }
+
+    pub async fn get_condition_id_from_slug(&self, market_slug: &str) -> ClientResult<String> {
+        let response = match self
+            .http_client
+            .get(format!(
+                "https://gamma-api.polymarket.com/markets?slug={market_slug}"
+            ))
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if !response.status().is_success() {
+                    let status = response.status();
+                    let error_text = response.text().await?;
+                    return Err(anyhow!(
+                        "Gamma API returned error status {}: {}",
+                        status,
+                        error_text
+                    ));
+                }
+                response
+            }
+            Err(error) => {
+                return Err(anyhow!("Failed to send request to Gamma API: {}", error));
+            }
+        };
+
+        let markets: Vec<Value> = response.json().await?;
+
+        if markets.is_empty() {
+            return Err(anyhow!("No markets found for slug: {}", market_slug));
+        }
+
+        if let Some(condition_id) = &markets[0].get("conditionId") {
+            if let Some(id_str) = condition_id.as_str() {
+                return Ok(id_str.to_string());
+            }
+        }
+
+        Err(anyhow!(
+            "Could not extract condition ID from Gamma API response"
+        ))
+    }
 }
